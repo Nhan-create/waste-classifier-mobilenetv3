@@ -9,7 +9,7 @@ Hệ thống được thiết kế để gộp, làm sạch và chuẩn bị d�
 
 ---
 
-## 🛠️ Những công việc đã thực hiện (What we did)
+## Những công việc đã thực hiện (What we did)
 
 Chúng tôi đã hoàn thiện và sửa đổi toàn bộ pipeline tiền xử lý dữ liệu để đạt hiệu năng tối đa và đảm bảo tính chính xác cho việc huấn luyện mô hình:
 
