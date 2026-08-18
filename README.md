@@ -5,7 +5,7 @@ Dự án này là phân hệ tiền xử lý dữ liệu cho đồ án khóa lu�
 Hệ thống được thiết kế để gộp, làm sạch và chuẩn bị dữ liệu từ 3 nguồn:
 1. **VN Trash** (Bộ dữ liệu rác thải Việt Nam).
 2. **Garbage Classification v2** (Bộ dữ liệu rác thải quốc tế).
-3. **Ảnh tự chụp tại TP.HCM** (Ảnh chụp thực tế góc cạnh và điều kiện môi trường Việt Nam).
+
 
 ---
 
