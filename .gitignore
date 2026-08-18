@@ -1,0 +1,56 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# IDEs
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# Datasets and large data folders (do not commit raw/processed images to github)
+data/raw/
+data/processed/
+data/interim/
+Data/
+
+# Keep metadata but ignore large CSVs if they exceed size, otherwise dataset_info.csv is fine
+# data/metadata/dataset_info.csv
+
+# Outputs and logs
+outputs/logs/scan_dataset_full.csv
+outputs/logs/duplicates_md5.csv
+outputs/logs/duplicates_phash.csv
+outputs/sample_visualizations/
