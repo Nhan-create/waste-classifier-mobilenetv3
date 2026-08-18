@@ -44,7 +44,7 @@ Chúng tôi đã hoàn thiện và sửa đổi toàn bộ pipeline tiền xử 
 
 ---
 
-## 📊 Kết quả chạy thực tế trên bộ dữ liệu
+## Kết quả chạy thực tế trên bộ dữ liệu
 
 * **Tổng số ảnh quét ban đầu**: `15,754` ảnh.
 * **Ảnh trùng lặp phát hiện & loại bỏ**: `923` ảnh.
@@ -67,7 +67,7 @@ Chúng tôi đã hoàn thiện và sửa đổi toàn bộ pipeline tiền xử 
 
 ---
 
-## 📂 Cấu trúc thư mục mã nguồn tiền xử lý
+##  Cấu trúc thư mục mã nguồn tiền xử lý
 
 ```
 src/preprocessing/
@@ -82,7 +82,7 @@ src/preprocessing/
 └── dataloader.py           # Dataset & PyTorch DataLoader
 ```
 
-## 🚀 Hướng dẫn chạy nhanh
+## Hướng dẫn chạy nhanh
 
 1. Kích hoạt môi trường ảo `.venv`:
    ```bash
