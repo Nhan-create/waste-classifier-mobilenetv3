@@ -2,14 +2,14 @@
 
 Dự án này là phân hệ tiền xử lý dữ liệu cho đồ án khóa luận tốt nghiệp về phân loại rác thải tại Việt Nam sử dụng mô hình mạng **MobileNetV3**.
 
-Hệ thống được thiết kế để gộp, làm sạch và chuẩn bị dữ liệu từ 3 nguồn:
+Hệ thống được thiết kế để gộp, làm sạch và chuẩn bị dữ liệu từ 2 nguồn:
 1. **VN Trash** (Bộ dữ liệu rác thải Việt Nam).
 2. **Garbage Classification v2** (Bộ dữ liệu rác thải quốc tế).
 
 
 ---
 
-## Những công việc đã thực hiện (What we did)
+## Những công việc đã thực hiện 
 
 Chúng tôi đã hoàn thiện và sửa đổi toàn bộ pipeline tiền xử lý dữ liệu để đạt hiệu năng tối đa và đảm bảo tính chính xác cho việc huấn luyện mô hình:
 
