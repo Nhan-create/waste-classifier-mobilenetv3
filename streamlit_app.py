@@ -36,8 +36,9 @@ st.set_page_config(
 
 RUN_COMMAND = (
     "streamlit run streamlit_app.py -- "
-    "--checkpoint artifacts\\run-001\\best.pt"
+    "--checkpoint artifacts\\ecovision\\best.pt"
 )
+PREPARE_COMMAND = "python -m scripts.import_ecovision_checkpoint"
 
 
 @st.cache_resource(show_spinner=False)
@@ -83,7 +84,7 @@ def render_image_input(payload: bytes, *, caption: str, service: InferenceServic
         return
     preview, result = st.columns([3, 2], gap="large")
     with preview:
-        st.image(image, caption=caption, use_container_width=True)
+        st.image(image, caption=caption, width="stretch")
     with result:
         render_prediction(prediction)
 
@@ -113,7 +114,7 @@ def render_video_summary(analysis: VideoAnalysis) -> None:
                 "Số khung hình": count,
             }
         )
-    st.dataframe(rows, use_container_width=True, hide_index=True)
+    st.dataframe(rows, width="stretch", hide_index=True)
 
 
 def render_uploaded_video(
@@ -155,7 +156,7 @@ def render_uploaded_video(
         latest_frame.image(
             image,
             caption=f"Khung hình gần nhất: {timestamp:.1f} giây",
-            use_container_width=True,
+            width="stretch",
         )
         latest = prediction_view(prediction)
         status.info(
@@ -252,9 +253,10 @@ def main() -> None:
     if problem:
         st.error(problem)
         st.markdown(
-            "Repository không kèm model đã huấn luyện. Hãy chạy pipeline/huấn "
-            "luyện hoặc tải `best.pt` do notebook của dự án tạo, rồi khởi động:"
+            "Tạo checkpoint chạy thử đã xác minh từ model MIT được ghim phiên bản:"
         )
+        st.code(PREPARE_COMMAND, language="powershell")
+        st.markdown("Sau đó khởi động ứng dụng:")
         st.code(RUN_COMMAND, language="powershell")
         st.stop()
 

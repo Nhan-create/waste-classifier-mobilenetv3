@@ -215,10 +215,18 @@ Kết quả là một JSON object chứa `top1`, `topk` và `low_confidence`. Tr
 
 ## Ứng dụng Streamlit: ảnh, camera và video
 
-Sau khi đã có checkpoint `best.pt`, chạy tại thư mục gốc repository:
+Để chạy ngay, chuẩn bị checkpoint mẫu 10 lớp đã ghim phiên bản:
 
 ```powershell
-streamlit run streamlit_app.py -- --checkpoint artifacts\run-001\best.pt
+python -m scripts.import_ecovision_checkpoint
+```
+
+Lệnh này tải state dict MobileNetV3-Large 17,1 MB từ nguồn MIT, kiểm SHA-256 trước khi mở bằng chế độ `weights_only`, xác nhận kiến trúc cùng thứ tự 10 lớp rồi đóng gói thành `artifacts/ecovision/best.pt`. Nguồn và giới hạn được ghi tại [docs/model-provenance.md](docs/model-provenance.md). Đây là model chạy thử được báo cáo huấn luyện trên Garbage Classification V2, không được trình bày như kết quả huấn luyện hai dataset của repository.
+
+Sau đó chạy tại thư mục gốc repository:
+
+```powershell
+streamlit run streamlit_app.py
 ```
 
 Hoặc cấu hình checkpoint bằng biến môi trường:

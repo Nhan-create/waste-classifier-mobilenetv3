@@ -7,6 +7,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+DEFAULT_CHECKPOINT_PATH = Path("artifacts/ecovision/best.pt")
+
 
 @dataclass(frozen=True)
 class WebSettings:
@@ -58,6 +60,8 @@ def parse_web_settings(
     checkpoint = values.checkpoint
     if checkpoint is None and environ.get("WASTE_CHECKPOINT"):
         checkpoint = Path(environ["WASTE_CHECKPOINT"])
+    if checkpoint is None:
+        checkpoint = DEFAULT_CHECKPOINT_PATH
 
     settings = WebSettings(
         checkpoint_path=checkpoint,
@@ -77,10 +81,7 @@ def checkpoint_problem(settings: WebSettings) -> str | None:
 
     path = settings.checkpoint_path
     if path is None:
-        return (
-            "Chưa cấu hình checkpoint best.pt. Hãy huấn luyện mô hình trước, "
-            "sau đó truyền đường dẫn bằng --checkpoint hoặc WASTE_CHECKPOINT."
-        )
+        return "Chưa cấu hình checkpoint best.pt."
     if not path.is_file():
         return f"Không tìm thấy checkpoint best.pt tại: {path}"
     return None
