@@ -1,62 +1,28 @@
-import os
-from pathlib import Path
-import collections
+"""Compute class weights without creating duplicate image files."""
+
+from __future__ import annotations
+
 import json
-import shutil
+from collections.abc import Sequence
+from pathlib import Path
+
+from src.data.dataset import compute_class_counts, compute_class_weights
+from src.data.schema import CLASS_NAMES
+
+__all__ = ["compute_class_counts", "compute_class_weights", "write_class_weights"]
 
 
-def compute_class_counts(processed_root="data/processed/train"):
-    p = Path(processed_root)
-    counts = {}
-    for label_dir in p.iterdir():
-        if label_dir.is_dir():
-            counts[label_dir.name] = len(list(label_dir.glob("*.*")))
-    return counts
-
-
-def compute_class_weights(counts: dict):
-    import numpy as np
-    labels = list(counts.keys())
-    freqs = np.array([counts[k] for k in labels], dtype=float)
-    total = freqs.sum()
-    weights = {labels[i]: float(total / (len(labels) * freqs[i])) for i in range(len(labels))}
+def write_class_weights(
+    train_dir: Path,
+    output_path: Path,
+    class_names: Sequence[str] = CLASS_NAMES,
+) -> dict[str, float]:
+    weights = compute_class_weights(train_dir, class_names)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output_path.with_suffix(output_path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(weights, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(output_path)
     return weights
-
-
-def oversample_copy(processed_root="data/processed/train", out_root="data/processed/train_oversampled"):
-    counts = compute_class_counts(processed_root)
-    max_count = max(counts.values())
-    src_root = Path(processed_root)
-    dst_root = Path(out_root)
-    dst_root.mkdir(parents=True, exist_ok=True)
-    for label, cnt in counts.items():
-        src_dir = src_root / label
-        dst_dir = dst_root / label
-        dst_dir.mkdir(parents=True, exist_ok=True)
-        files = list(src_dir.glob("*.*"))
-        # copy original files
-        for f in files:
-            shutil.copy2(f, dst_dir / f.name)
-        # oversample by copying with new names
-        if len(files) == 0:
-            continue
-        num_to_add = max_count - len(files)
-        for i in range(num_to_add):
-            src = files[i % len(files)]
-            new_name = f"oversample_{i:05d}_{src.name}"
-            shutil.copy2(src, dst_dir / new_name)
-
-
-def main():
-    counts = compute_class_counts()
-    print("Class counts:", counts)
-    weights = compute_class_weights(counts)
-    Path("data/processed").mkdir(parents=True, exist_ok=True)
-    with open("data/processed/class_weights.json", "w", encoding="utf-8") as f:
-        json.dump(weights, f, indent=2)
-    print("Saved class weights to data/processed/class_weights.json")
-    print("To perform oversampling copy, run oversample_copy() or call oversample_copy function.")
-
-
-if __name__ == "__main__":
-    main()
