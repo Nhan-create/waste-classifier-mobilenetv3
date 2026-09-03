@@ -1,112 +1,116 @@
-import os
-import hashlib
+"""Audit a raw manifest and write deterministic duplicate reports."""
+
+from __future__ import annotations
+
+import csv
+from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
-from PIL import Image, UnidentifiedImageError
-import imagehash
-import pandas as pd
-from tqdm import tqdm
+
+from src.data.dedup import DuplicateReport, audit_raw_manifest
+from src.data.manifest import read_manifest, write_manifest
+from src.data.schema import ManifestRecord, load_label_mapping
 
 
-def md5_of_file(path: Path) -> str:
-    h = hashlib.md5()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            h.update(chunk)
-    return h.hexdigest()
+@dataclass(frozen=True)
+class CleaningOutputs:
+    scanned_manifest: Path
+    duplicate_report: Path
+    conflict_report: Path
+    report: DuplicateReport
 
 
-def scan_dataset(root_dirs, out_csv="data/metadata/dataset_info.csv"):
-    rows = []
-    valid_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.bmp'}
-    for src in root_dirs:
-        for label_dir in Path(src).iterdir():
-            if not label_dir.is_dir():
-                continue
-            label = label_dir.name
-            for img_path in label_dir.rglob("*.*"):
-                if not img_path.is_file():
-                    continue
-                if img_path.suffix.lower() not in valid_extensions:
-                    continue
-                meta = {
-                    "path": str(img_path).replace('\\\\', '/'),
-                    "label": label,
-                    "source": src,
-                    "width": None,
-                    "height": None,
-                    "mode": None,
-                    "md5": None,
-                    "phash": None,
-                    "is_corrupt": False,
-                    "is_duplicate": False,
-                }
-                try:
-                    with Image.open(img_path) as im:
-                        im.verify()
-                    with Image.open(img_path) as im:
-                        meta["width"], meta["height"] = im.size
-                        meta["mode"] = im.mode
-                        # ensure RGB for perceptual hash
-                        im_rgb = im.convert("RGB")
-                        meta["phash"] = str(imagehash.phash(im_rgb))
-                except (UnidentifiedImageError, OSError, ValueError):
-                    meta["is_corrupt"] = True
-                try:
-                    meta["md5"] = md5_of_file(img_path)
-                except Exception:
-                    meta["md5"] = None
-
-                rows.append(meta)
-
-    df = pd.DataFrame(rows)
-    # We will mark duplicates in the main function and save it there
-    return df
+def _atomic_write_rows(
+    path: Path,
+    fieldnames: tuple[str, ...],
+    rows: list[dict[str, object]],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+    temporary.replace(path)
 
 
-def find_duplicates(df):
-    # duplicates by md5
-    dup_md5 = df[df.duplicated(subset=["md5"], keep=False) & df["md5"].notna()].sort_values("md5")
-    # perceptual hash duplicates (exact phash)
-    dup_phash = df[df.duplicated(subset=["phash"], keep=False) & df["phash"].notna()].sort_values("phash")
-    return dup_md5, dup_phash
+def _write_duplicate_reports(
+    records: list[ManifestRecord],
+    output_dir: Path,
+) -> tuple[Path, Path]:
+    cluster_counts = Counter(record.cluster_id for record in records if record.cluster_id)
+    duplicate_path = output_dir / "duplicate_clusters.csv"
+    duplicate_rows = [
+        {
+            "cluster_id": record.cluster_id,
+            "image_id": record.image_id,
+            "duplicate_kind": record.duplicate_kind,
+            "status": record.status,
+            "exclusion_reason": record.exclusion_reason,
+        }
+        for record in records
+        if cluster_counts[record.cluster_id] > 1
+    ]
+    _atomic_write_rows(
+        duplicate_path,
+        (
+            "cluster_id",
+            "image_id",
+            "duplicate_kind",
+            "status",
+            "exclusion_reason",
+        ),
+        duplicate_rows,
+    )
+
+    conflict_path = output_dir / "label_conflicts.csv"
+    conflict_rows = [
+        {
+            "cluster_id": record.cluster_id,
+            "image_id": record.image_id,
+            "source_dataset": record.source_dataset,
+            "original_label": record.original_label,
+            "unified_label": record.unified_label,
+        }
+        for record in records
+        if record.status == "conflict"
+    ]
+    _atomic_write_rows(
+        conflict_path,
+        (
+            "cluster_id",
+            "image_id",
+            "source_dataset",
+            "original_label",
+            "unified_label",
+        ),
+        conflict_rows,
+    )
+    return duplicate_path, conflict_path
 
 
-def main():
-    # expect raw data in data/raw/* (folders per source)
-    raw_root = Path("data/raw")
-    if not raw_root.exists():
-        print("No data/raw directory found — please prepare raw datasets under data/raw/")
-        return
-    sources = [str(p) for p in raw_root.iterdir() if p.is_dir()]
-    print("Scanning sources:", sources)
-    df = scan_dataset(sources)
-    
-    # Mark duplicates (keep only the first occurrence)
-    if 'md5' in df.columns:
-        df.loc[df.duplicated(subset=['md5'], keep='first') & df['md5'].notna(), 'is_duplicate'] = True
-    if 'phash' in df.columns:
-        df.loc[df.duplicated(subset=['phash'], keep='first') & df['phash'].notna(), 'is_duplicate'] = True
+def run_cleaning(
+    raw_manifest_path: Path,
+    mapping_path: Path,
+    output_dir: Path,
+    *,
+    phash_threshold: int,
+) -> CleaningOutputs:
+    """Run mapping/image audit and persist all review outputs."""
 
-    # Save to standard path
-    out_csv = "data/metadata/dataset_info.csv"
-    out_dir = Path(out_csv).parent
-    out_dir.mkdir(parents=True, exist_ok=True)
-    df.to_csv(out_csv, index=False)
-
-    dup_md5, dup_phash = find_duplicates(df)
-    logs_dir = Path("outputs/logs")
-    logs_dir.mkdir(parents=True, exist_ok=True)
-    df.to_csv(logs_dir / "scan_dataset_full.csv", index=False)
-    dup_md5.to_csv(logs_dir / "duplicates_md5.csv", index=False)
-    dup_phash.to_csv(logs_dir / "duplicates_phash.csv", index=False)
-    
-    num_corrupt = df['is_corrupt'].sum()
-    num_duplicates = df['is_duplicate'].sum()
-    print(f"Scan complete. Total: {len(df)} images.")
-    print(f"  - Corrupt: {num_corrupt}")
-    print(f"  - Duplicates: {num_duplicates}")
-    print(f"Reports saved in {logs_dir} and metadata saved to {out_csv}")
-
-
-if __name__ == "__main__":
-    main()
+    raw_records = read_manifest(raw_manifest_path)
+    mapping = load_label_mapping(mapping_path)
+    audited, report = audit_raw_manifest(
+        raw_records,
+        mapping,
+        phash_threshold=phash_threshold,
+    )
+    scanned_path = output_dir / "scanned_manifest.csv"
+    write_manifest(scanned_path, audited)
+    duplicate_path, conflict_path = _write_duplicate_reports(audited, output_dir)
+    return CleaningOutputs(
+        scanned_manifest=scanned_path,
+        duplicate_report=duplicate_path,
+        conflict_report=conflict_path,
+        report=report,
+    )
