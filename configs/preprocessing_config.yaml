@@ -12,10 +12,12 @@ dataset:
       slug: mrgetshjtdone/vn-trash-classification
       version: 1
       layout: vn_trash
+      root: data/sources/vn_trash
     garbage_v2:
       slug: sumn2u/garbage-classification-v2
       version: 12
       layout: garbage_v2
+      root: data/sources/garbage_v2
   split:
     train: 0.70
     val: 0.15

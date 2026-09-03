@@ -462,7 +462,7 @@ Expected: FAIL until all dependency declarations and package initializers are co
 
 - [ ] **Step 2: Pin compatible dependency floors and protect generated files**
 
-`requirements.txt` must include these exact compatible constraints: `torch==2.3.1`, `torchvision==0.18.1`, `Pillow>=10.3,<13`, `ImageHash>=4.3,<5`, `numpy>=1.26,<3`, `pandas>=2.2,<4`, `PyYAML>=6,<7`, `scikit-learn>=1.4,<2`, `matplotlib>=3.8,<4`, `seaborn>=0.13,<1`, `PyQt5>=5.15.10,<6`, `opencv-python-headless==4.10.0.84`, `kagglehub>=1.0.2,<2`, `nbformat>=5.10,<6`, `pytest>=8,<10`, `pytest-qt>=4.4,<5`, and `ruff>=0.5,<1`. Keep runtime and test packages in this one existing file.
+`requirements.txt` must include these exact compatible constraints: `torch==2.3.1`, `torchvision==0.18.1`, `numpy==1.26.4`, `scipy==1.13.1`, `Pillow>=10.3,<13`, `ImageHash>=4.3,<5`, `pandas>=2.2,<4`, `PyYAML>=6,<7`, `scikit-learn>=1.4,<2`, `matplotlib>=3.8,<4`, `seaborn>=0.13,<1`, `PyQt5>=5.15.10,<6`, `opencv-python-headless==4.10.0.84`, `kagglehub>=1.0.2,<2`, `nbformat>=5.10,<6`, `pytest>=8,<10`, `pytest-qt>=4.4,<5`, and `ruff>=0.5,<1`. Keep runtime and test packages in this one existing file. NumPy/SciPy are pinned to the tested 1.x ABI because PyTorch 2.3.1 emits an `_ARRAY_API` initialization error with the inherited NumPy 2.x runtime.
 
 `.gitignore` must cover: `data/raw/`, `data/interim/`, `data/processed/`, `data/sources/`, `data/metadata/*/`, `artifacts/`, `outputs/*.sqlite3*`, `*.pt`, `*.pth`, `kaggle.json`, `.kaggle/`, Python caches, pytest cache, notebook checkpoints, and generated archives. Add `!data/metadata/label_mapping.csv` after metadata rules.
 

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
+import json
 from collections import defaultdict
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from PIL import Image, UnidentifiedImageError
@@ -155,3 +157,30 @@ def validate_processed_dataset(
 def require_valid_processed_dataset(report: ValidationReport) -> None:
     if not report.is_valid:
         raise PipelineError(f"Processed dataset validation failed: {report}")
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--dataset-root", type=Path, required=True)
+    parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--phash-threshold", type=int, default=4)
+    return parser.parse_args()
+
+
+def main() -> int:
+    arguments = _parse_args()
+    try:
+        report = validate_processed_dataset(
+            arguments.dataset_root,
+            arguments.manifest,
+            phash_threshold=arguments.phash_threshold,
+        )
+    except PipelineError as error:
+        print(f"Dataset validation failed: {error}")
+        return 2
+    print(json.dumps({**asdict(report), "is_valid": report.is_valid}, sort_keys=True))
+    return 0 if report.is_valid else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
