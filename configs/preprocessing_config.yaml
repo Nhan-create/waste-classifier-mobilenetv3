@@ -3,3 +3,23 @@ batch_size: 32
 mean: [0.485, 0.456, 0.406]
 std: [0.229, 0.224, 0.225]
 num_workers: 4
+
+dataset:
+  version: v1
+  mapping_path: data/metadata/label_mapping.csv
+  sources:
+    vn_trash:
+      slug: mrgetshjtdone/vn-trash-classification
+      version: 1
+      layout: vn_trash
+    garbage_v2:
+      slug: sumn2u/garbage-classification-v2
+      version: 12
+      layout: garbage_v2
+  split:
+    train: 0.70
+    val: 0.15
+    test: 0.15
+    seed: 42
+  duplicates:
+    phash_hamming_threshold: 4

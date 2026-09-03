@@ -40,11 +40,15 @@ env/
 *.sln
 *.swp
 
-# Datasets and large data folders (do not commit raw/processed images to github)
-data/raw/
-data/processed/
-data/interim/
-Data/
+# Datasets and large data folders (root-anchored so src/data and tests/data stay tracked)
+/data/raw/
+/data/processed/
+/data/interim/
+/data/sources/
+
+# Generated per-version metadata; keep the reviewed mapping source of truth.
+/data/metadata/*/
+!/data/metadata/label_mapping.csv
 
 # Keep metadata but ignore large CSVs if they exceed size, otherwise dataset_info.csv is fine
 # data/metadata/dataset_info.csv

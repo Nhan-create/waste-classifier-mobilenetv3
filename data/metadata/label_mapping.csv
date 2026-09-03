@@ -1,0 +1,10 @@
+source_dataset,original_label,unified_label
+vn_trash,Alu,metal
+vn_trash,Carton,cardboard
+vn_trash,Foam_box,plastic
+vn_trash,Milk_box,cardboard
+vn_trash,Other,trash
+vn_trash,PET,plastic
+vn_trash,Paper,paper
+vn_trash,Paper_cup,paper
+vn_trash,Plastic_cup,plastic
