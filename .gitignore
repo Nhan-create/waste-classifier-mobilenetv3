@@ -72,3 +72,7 @@ kaggle.json
 .ipynb_checkpoints/
 .coverage
 htmlcov/
+
+# Streamlit local credentials
+.streamlit/secrets.toml
+.streamlit/credentials.toml

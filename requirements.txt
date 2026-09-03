@@ -17,3 +17,6 @@ tqdm>=4.66,<5
 pytest>=8,<10
 pytest-qt>=4.4,<5
 ruff>=0.5,<1
+streamlit>=1.51,<2
+streamlit-webrtc>=0.76.2,<0.77
+av>=14,<17

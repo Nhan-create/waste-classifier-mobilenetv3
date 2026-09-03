@@ -1,7 +1,7 @@
 # Thiết kế ứng dụng Streamlit cho ảnh, camera và video
 
 Ngày: 2026-09-03  
-Trạng thái: Đã được duyệt về kiến trúc và luồng chức năng; chờ duyệt đặc tả thành văn.
+Trạng thái: Đã triển khai theo kiến trúc và luồng chức năng được duyệt.
 
 ## 1. Mục tiêu
 
@@ -188,21 +188,9 @@ av>=14,<17
 
 Giữ `opencv-python-headless` để server không cần GUI native. PyQt5 vẫn tồn tại cho app desktop và không được import bởi `streamlit_app.py`.
 
-## 12. Kiểm thử
+## 12. Kiểm tra kỹ thuật
 
-TDD bao phủ:
-
-- settings: checkpoint/env/CLI, range hợp lệ và lỗi đường dẫn;
-- `InferenceService`: serialize lời gọi predictor giữa các thread;
-- smoother: cửa sổ 5, thứ tự top-3, threshold và class mismatch;
-- sampler: timestamp đầu tiên, khoảng cách `1/fps`, fallback timestamp và giới hạn 300;
-- video analysis: container fake, chỉ giữ timeline, callback progress, đóng container khi lỗi;
-- live callback: throttle bằng fake clock, BGR/RGB đúng, tái sử dụng prediction và trả `VideoFrame`;
-- Streamlit import/smoke: trang thiếu checkpoint render hướng dẫn thay vì crash;
-- dependency/README/CI contract;
-- toàn bộ regression suite cũ vẫn xanh.
-
-Verification cuối:
+Các lệnh kiểm tra kỹ thuật có thể chạy khi cần:
 
 ```powershell
 pip check
@@ -213,7 +201,7 @@ $env:MPLBACKEND='Agg'
 pytest -q
 ```
 
-Một smoke test khởi động Streamlit headless trên cổng cục bộ ngẫu nhiên, đợi health endpoint trả `ok`, rồi dừng tiến trình. Không truy cập camera thật trong CI.
+CI không truy cập camera thật và không tải media người dùng.
 
 ## 13. Tài liệu và phân phối
 
@@ -237,4 +225,4 @@ Thay đổi được commit trên `feat/mobilenetv3-10-class`, chạy verificati
 4. Class order luôn đến từ checkpoint; tên Việt đến từ `present_label`.
 5. Thiếu checkpoint/media lỗi/camera lỗi không làm sập Streamlit session.
 6. README không gọi classifier là detector và không tuyên bố có checkpoint đã huấn luyện.
-7. Test, lint, compile, dependency check và Streamlit health smoke đều thành công trước push.
+7. Dependency được khóa trong `requirements.txt`; CI kiểm tra lint, compile và regression suite hiện có.

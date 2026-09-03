@@ -1,6 +1,6 @@
 # Waste Classifier MobileNetV3 — phân loại rác 10 lớp
 
-Hệ thống PyTorch hoàn chỉnh để hợp nhất hai nguồn ảnh rác, kiểm tra và chia dữ liệu không rò rỉ, huấn luyện MobileNetV3-Large, đánh giá đa lớp, dự đoán bằng CLI và chạy ứng dụng PyQt5 với ảnh tĩnh hoặc webcam.
+Hệ thống PyTorch hoàn chỉnh để hợp nhất hai nguồn ảnh rác, kiểm tra và chia dữ liệu không rò rỉ, huấn luyện MobileNetV3-Large, đánh giá đa lớp, dự đoán bằng CLI, chạy web Streamlit với ảnh/camera/video và chạy ứng dụng PyQt5.
 
 > Trạng thái quan trọng: repository không chứa dữ liệu hoặc checkpoint đã huấn luyện. Mã nguồn, notebook và kiểm thử đã sẵn sàng; `best.pt` chỉ xuất hiện sau khi chạy huấn luyện với hai dataset, nên README không công bố một độ chính xác chưa được đo.
 
@@ -25,7 +25,7 @@ MobileNetV3-Large (ImageNet) ─ weighted CE ─ AdamW ─ 2 phase
         │
         ├── best.pt + last.pt
         ├── metrics JSON/CSV + confusion matrix
-        └── CLI / PyQt5 ảnh tĩnh / webcam trong bộ nhớ
+        └── CLI / Streamlit ảnh-camera-video / PyQt5
 ```
 
 MobileNetV3-Large dùng các khối inverted residual, depthwise convolution, pointwise convolution, Squeeze-and-Excitation và hàm kích hoạt h-swish để giảm chi phí tính toán. Classification layer cuối được thay bằng `Linear(..., 10)`. Huấn luyện transfer learning gồm:
@@ -213,6 +213,34 @@ python -m src.inference.predict \
 
 Kết quả là một JSON object chứa `top1`, `topk` và `low_confidence`. Transform và class order được lấy từ metadata checkpoint, không hard-code riêng ở CLI.
 
+## Ứng dụng Streamlit: ảnh, camera và video
+
+Sau khi đã có checkpoint `best.pt`, chạy tại thư mục gốc repository:
+
+```powershell
+streamlit run streamlit_app.py -- --checkpoint artifacts\run-001\best.pt
+```
+
+Hoặc cấu hình checkpoint bằng biến môi trường:
+
+```powershell
+$env:WASTE_CHECKPOINT='artifacts\run-001\best.pt'
+streamlit run streamlit_app.py
+```
+
+Giao diện có bốn chế độ:
+
+- **Tải ảnh** — nhận JPEG, PNG, WebP hoặc BMP và hiển thị top-1/top-3.
+- **Chụp ảnh** — dùng camera của trình duyệt để chụp rồi phân loại.
+- **Tải video** — nhận MP4, MOV, AVI, MKV hoặc WebM, lấy mẫu mặc định 2 FPS, làm mượt 5 kết quả gần nhất và dừng ở tối đa 300 mẫu.
+- **Camera trực tiếp** — dùng WebRTC để phân loại khoảng 2 lần/giây và vẽ top-3 lên luồng hình ảnh.
+
+Ảnh và video chỉ được xử lý trong bộ nhớ, không tự ghi vào SQLite hoặc repository. Nếu thiếu checkpoint, trang hiển thị lệnh cần chạy thay vì khởi tạo model/camera. Có thể điều chỉnh bằng `--device`, `--confidence-threshold`, `--video-sample-fps`, `--max-video-frames`, `--live-inference-fps` và `--smoothing-window`.
+
+Đây là bộ **phân loại toàn khung hình, không phải object detector**: ứng dụng không vẽ bounding box và mỗi khung hình chỉ trả một lớp chính. Để kết quả ổn định, đặt một vật thể rác ở giữa, đủ sáng và hạn chế nền phức tạp.
+
+Trên máy local, camera trình duyệt hoạt động qua `localhost`. Khi triển khai remote, trang phải dùng **HTTPS** để trình duyệt cấp quyền camera; mạng sau NAT/firewall có thể cần cấu hình **STUN/TURN** riêng. Ứng dụng có public STUN mặc định nhưng không hard-code credential TURN.
+
 ## Ứng dụng PyQt5: ảnh và webcam
 
 ```bash
@@ -253,14 +281,14 @@ Trừ bảng mapping, toàn bộ dữ liệu, checkpoint, SQLite và output sinh
 ## Kiểm thử và CI
 
 ```powershell
-ruff check src tests app.py scripts
-python -m compileall src app.py scripts
+ruff check src tests app.py streamlit_app.py scripts
+python -m compileall src app.py streamlit_app.py scripts
 $env:QT_QPA_PLATFORM='offscreen'
 $env:MPLBACKEND='Agg'
 pytest -q
 ```
 
-GitHub Actions chạy cùng quality gate trên Python 3.11, CPU, Qt headless; CI không tải dataset, mở camera hoặc chạy huấn luyện đầy đủ. Test dùng dữ liệu tổng hợp nhỏ để kiểm tra mapping, dedup, group split, checkpoint, train smoke, evaluation, inference, SQLite, worker Qt, GUI và notebook contract.
+GitHub Actions chạy cùng quality gate trên Python 3.11, CPU, Qt headless; CI không tải dataset, mở camera hoặc chạy huấn luyện đầy đủ. Test hiện có dùng dữ liệu tổng hợp nhỏ để kiểm tra mapping, dedup, group split, checkpoint, train smoke, evaluation, inference, SQLite, worker Qt, GUI và notebook contract.
 
 ## Giới hạn
 
