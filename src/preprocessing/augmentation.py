@@ -1,15 +1,22 @@
 from torchvision import transforms
-from typing import List
 
 
-def augmentation_group(group: str, image_size: int, mean: List[float], std: List[float], train: bool = True):
+def augmentation_group(
+    group: str,
+    image_size: int,
+    mean: list[float],
+    std: list[float],
+    train: bool = True,
+):
     # Define augmentation groups A (baseline) to E (strong)
     if not train:
-        return transforms.Compose([
-            transforms.Resize((image_size, image_size)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=mean, std=std),
-        ])
+        return transforms.Compose(
+            [
+                transforms.Resize((image_size, image_size)),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=mean, std=std),
+            ]
+        )
 
     if group == "A":
         # baseline

@@ -1,123 +1,186 @@
-# Tiền Xử Lý Dữ Liệu — Đồ Án Phân Loại Rác Thải (MobileNetV3)
+# Tiền xử lý dữ liệu cho Waste Classifier 10 lớp
 
-## 1. Mục tiêu
+Tài liệu này mô tả đúng pipeline hiện tại. Pipeline dùng hai nguồn công khai, không có nguồn ảnh tự chụp và không ghi sẵn số lượng ảnh đầu ra. Số lượng phải được lấy từ report của chính lần chạy vì dataset, ảnh lỗi và duplicate audit quyết định kết quả.
 
-Chuẩn bị và xử lý dữ liệu từ 3 nguồn (**VN Trash**, **Garbage Classification v2**, **ảnh tự chụp tại TP.HCM**) để huấn luyện mô hình phân loại rác **MobileNetV3**, đồng thời thiết kế các chiến lược **data augmentation** phục vụ mục tiêu so sánh thực nghiệm của đề tài (ảnh hưởng của augmentation đến hiệu suất mô hình trong điều kiện ánh sáng/góc chụp thực tế Việt Nam).
+## 1. Nguồn và bất biến
 
----
+- VN Trash Classification: `mrgetshjtdone/vn-trash-classification/versions/1` — MIT.
+- Garbage Classification v2: `sumn2u/garbage-classification-v2/versions/12` — MIT.
+- Tập class ID theo đúng thứ tự: `battery`, `biological`, `cardboard`, `clothes`, `glass`, `metal`, `paper`, `plastic`, `shoes`, `trash`.
+- Tỷ lệ mặc định: train `0.70`, validation `0.15`, test `0.15`; seed `42`.
+- Train được augmentation; validation/test chỉ resize và normalize.
+- Không một duplicate cluster nào được phép xuất hiện ở nhiều split.
+- Mỗi split vật lý phải có đủ đúng 10 thư mục lớp.
+- Pipeline chỉ tạo version mới và từ chối ghi đè `data/processed/v1` đã tồn tại.
 
-## 2. Cấu trúc thư mục dự án
+Các giá trị trên nằm trong `configs/preprocessing_config.yaml`; thứ tự lớp nằm trong `src/data/schema.py`.
 
+## 2. Ánh xạ nhãn
+
+`data/metadata/label_mapping.csv` là bảng ánh xạ duy nhất cho VN Trash:
+
+| Nhãn nguồn | Nhãn chuẩn |
+|---|---|
+| `Alu` | `metal` |
+| `Carton` | `cardboard` |
+| `Foam_box` | `plastic` |
+| `Milk_box` | `cardboard` |
+| `Other` | `trash` |
+| `PET` | `plastic` |
+| `Paper` | `paper` |
+| `Paper_cup` | `paper` |
+| `Plastic_cup` | `plastic` |
+
+Garbage Classification v2 đã có 10 nhãn chuẩn; pipeline chỉ chuẩn hóa chữ thường, dấu cách và dấu gạch. Nhãn ngoài hợp đồng không được ghép theo phỏng đoán mà nhận trạng thái `unmapped`.
+
+## 3. Luồng xử lý và thuật toán
+
+### Bước 1 — Ingest có provenance
+
+`src/preprocessing/merge_datasets.py` đọc layout `Train/Test` của VN Trash và layout `original` hoặc split/class của Garbage v2. Với mỗi file hợp lệ về phần mở rộng:
+
+1. lưu `source_dataset`, `original_label`, `original_split` và `source_path`;
+2. tạo `image_id` ổn định bằng SHA-256 của chuỗi provenance `source + split + relative_path`;
+3. copy vào `data/raw/<source>/<label>/<image_id>.<ext>`;
+4. nếu đường dẫn đích đã tồn tại nhưng bytes khác, dừng thay vì ghi đè.
+
+Output là `raw_manifest.csv`; provenance không bị mất khi hợp nhất hai nguồn có tên file giống nhau.
+
+### Bước 2 — Kiểm tra ảnh và tạo fingerprint
+
+`src/preprocessing/clean_data.py` cùng `src/data/dedup.py`:
+
+- Pillow mở, `load()` và chuyển thử ảnh sang RGB;
+- ghi extension, width, height, mode;
+- tính **SHA-256 của bytes** để nhận biết exact duplicate;
+- tính pHash để nhận biết ảnh gần trùng theo khoảng cách Hamming, mặc định `<= 4`;
+- dùng chỉ mục BK-tree để tìm hàng xóm pHash và union-find để gom các quan hệ trùng thành cluster bắc cầu.
+
+Ảnh corrupt nhận lý do loại cụ thể. SHA-256 được dùng xuyên suốt; pipeline không dùng MD-5.
+
+### Bước 3 — Xử lý duplicate và xung đột nhãn
+
+Mỗi duplicate cluster chỉ giữ một đại diện xác định theo thứ tự ổn định. Nếu các thành viên trong cùng cluster ánh xạ sang nhiều class ID khác nhau, toàn cluster được đánh dấu xung đột/cách ly để review; pipeline không tự chọn nhãn “đa số”.
+
+Các output audit:
+
+- `scanned_manifest.csv` — trạng thái từng ảnh;
+- `duplicate_clusters.csv` — exact/near duplicate;
+- `label_conflicts.csv` — cluster có nhãn mâu thuẫn.
+
+### Bước 4 — Chia group-stratified, deterministic
+
+`src/data/split.py` chia độc lập theo bucket `source_dataset × unified_label`. Đơn vị chia là **cluster**, không phải file:
+
+1. kiểm tra mỗi bucket có ít nhất ba cluster;
+2. sắp cluster bằng khóa SHA-256 chứa seed;
+3. cấp trước một cluster cho train, val và test;
+4. gán các cluster còn lại vào split làm nhỏ nhất tổng sai lệch so với mục tiêu 70/15/15;
+5. kiểm tra mỗi split có đúng tập 10 lớp.
+
+Cùng manifest, mapping, tỷ lệ và seed sẽ cho cùng kết quả. Cách chia theo cluster ngăn bản sao hoặc ảnh gần trùng đi qua ranh giới split.
+
+### Bước 5 — Materialize bất biến
+
+Pipeline dựng cây tạm:
+
+```text
+data/processed/v1/
+├── train/{10-class-ids}/
+├── val/{10-class-ids}/
+└── test/{10-class-ids}/
 ```
-waste-classification/
-│
-├── data/
-│   ├── raw/                        # Dữ liệu gốc, chưa xử lý
-│   │   ├── vn_trash/
-│   │   ├── garbage_v2/
-│   │   └── self_collected/
-│   │
-│   ├── interim/                    # Dữ liệu sau khi gộp + làm sạch, chưa augment
-│   │   └── merged_clean/
-│   │
-│   ├── processed/                  # Dữ liệu sẵn sàng huấn luyện (đã chia train/val/test)
-│   │   ├── train/
-│   │   ├── val/
-│   │   └── test/
-│   │
-│   └── metadata/
-│       ├── label_mapping.csv       # Bảng ánh xạ nhãn giữa các nguồn
-│       └── dataset_info.csv        # Metadata: đường dẫn, nhãn, nguồn, kích thước...
-│
-├── src/
-│   └── preprocessing/
-│       ├── merge_datasets.py       # Gộp 3 nguồn dữ liệu + áp label mapping
-│       ├── clean_data.py           # Lọc ảnh lỗi, trùng lặp, nhiễu
-│       ├── eda.py                  # Thống kê, trực quan hóa dữ liệu
-│       ├── lighting_enhance.py     # CLAHE, gamma correction, white balance
-│       ├── augmentation.py         # Định nghĩa 5 nhóm augmentation (A–E)
-│       ├── split_dataset.py        # Chia stratified train/val/test
-│       ├── balance_classes.py      # Xử lý mất cân bằng lớp (oversampling/weights)
-│       └── dataloader.py           # PyTorch Dataset & DataLoader (transform pipeline)
-│
-├── notebooks/
-│   ├── 01_eda.ipynb                # Khám phá dữ liệu ban đầu
-│   ├── 02_augmentation_test.ipynb  # Thử nghiệm trực quan các augmentation
-│   └── 03_experiment_compare.ipynb # So sánh kết quả các chiến lược A–E
-│
-├── configs/
-│   └── preprocessing_config.yaml   # Tham số: image size, mean/std, augmentation groups...
-│
-├── outputs/
-│   ├── logs/                       # Log quá trình xử lý (số ảnh lỗi, trùng lặp...)
-│   └── sample_visualizations/      # Ảnh minh họa trước/sau augmentation
-│
-└── README.md                       # File này
+
+Chỉ khi mọi copy và manifest thành công, cây tạm mới được đổi tên thành version chính thức. Nếu có lỗi, cây build tạm được dọn; version đã tồn tại không bị sửa hoặc trộn âm thầm.
+
+### Bước 6 — Validator chống leakage
+
+`src/data/validation.py` không chỉ tin manifest. Nó quét lại file đã materialize, tính lại SHA-256/pHash và kiểm tra:
+
+- đúng ba split và đúng 10 class directories;
+- manifest khớp file vật lý;
+- không exact duplicate đi qua split;
+- không near-duplicate cluster đi qua split.
+
+Huấn luyện gọi validator và dừng nếu `validation.is_valid` là false.
+
+### Bước 7 — Class weights
+
+Không oversample vật lý mặc định. `src/preprocessing/balance_classes.py` tính trọng số chỉ từ train:
+
+```text
+w_c = N / (K × n_c)
 ```
 
----
+Trong đó `N` là tổng ảnh train, `K = 10`, `n_c` là số ảnh của lớp `c`. Trainer dựng tensor theo thứ tự class ID chuẩn, không phụ thuộc thứ tự key JSON.
 
-## 3. Các bước tiền xử lý (quy trình thực hiện)
+### Bước 8 — Transform
 
-| Bước | Nội dung | File thực hiện |
-|---|---|---|
-| 1 | Gộp 3 nguồn dữ liệu, thống nhất nhãn & cấu trúc thư mục | `merge_datasets.py` |
-| 2 | Làm sạch: loại ảnh lỗi, trùng lặp (pHash), ảnh mờ/nhiễu | `clean_data.py` |
-| 3 | Phân tích khám phá dữ liệu (phân bố lớp, nguồn, độ sáng) | `eda.py`, `01_eda.ipynb` |
-| 4 | Tăng cường điều kiện ánh sáng thực tế (CLAHE, gamma...) | `lighting_enhance.py` |
-| 5 | Thiết kế 5 nhóm augmentation (A: baseline → E: nền phức tạp) | `augmentation.py`, `02_augmentation_test.ipynb` |
-| 6 | Chia tập Train/Val/Test (stratified, ưu tiên ảnh tự chụp cho test) | `split_dataset.py` |
-| 7 | Xử lý mất cân bằng lớp (oversampling / class weights) | `balance_classes.py` |
-| 8 | Xây dựng pipeline transform cho huấn luyện & inference (đồng nhất) | `dataloader.py` |
+Nhóm augmentation C mặc định cho train:
 
----
+- `RandomResizedCrop(224, scale=(0.7, 1.0))`;
+- horizontal flip;
+- rotation tối đa 20 độ;
+- color jitter;
+- chuyển tensor và normalize ImageNet.
 
-## 4. Danh sách file cần tạo
+Validation, test và inference chỉ resize `224×224`, chuyển tensor và normalize bằng mean/std trong config/checkpoint. Không augment val/test để giữ phép đo ổn định.
 
-### 4.1 Dữ liệu & metadata
-- [x] `data/metadata/label_mapping.csv`
-- [ ] `data/metadata/dataset_info.csv`
+## 4. Dataset fingerprint
 
-### 4.2 Script tiền xử lý (`src/preprocessing/`)
-- [x] `merge_datasets.py`
-- [x] `clean_data.py`
-- [x] `eda.py`
-- [x] `lighting_enhance.py`
-- [x] `augmentation.py`
-- [x] `split_dataset.py`
-- [x] `balance_classes.py`
-- [x] `dataloader.py`
+Fingerprint checkpoint là SHA-256 của:
 
-### 4.3 Notebook
-- [ ] `notebooks/01_eda.ipynb`
-- [ ] `notebooks/02_augmentation_test.ipynb`
-- [ ] `notebooks/03_experiment_compare.ipynb`
+1. split manifest được sắp ổn định;
+2. bytes của `label_mapping.csv`;
+3. seed và tỷ lệ split.
 
-### 4.4 Cấu hình & log
-- [ ] `configs/preprocessing_config.yaml`
-- [ ] `outputs/logs/cleaning_report.txt`
-- [ ] `outputs/sample_visualizations/` (ảnh minh họa)
+Nhờ vậy có thể phát hiện khi model được dùng với một phiên bản dữ liệu hoặc mapping khác.
 
----
+## 5. Output của một lần chạy
 
-## 5. Ghi chú quan trọng
+```text
+data/metadata/v1/
+├── raw_manifest.csv
+├── scanned_manifest.csv
+├── duplicate_clusters.csv
+├── label_conflicts.csv
+├── split_manifest.csv
+└── class_weights.json
+outputs/data/v1/
+├── eda.json
+└── eda_report.txt
+```
 
-- **Augmentation chỉ áp dụng cho tập Train.** Tập Val/Test chỉ resize + normalize để đánh giá khách quan.
-- **Test set nên ưu tiên ảnh tự chụp tại TP.HCM** để phản ánh đúng "điều kiện thực tế" mà đề tài hướng tới.
-- **Pipeline tiền xử lý lúc inference (demo web)** phải giống hệt pipeline lúc validate, tránh lệch phân phối dữ liệu (data distribution shift).
-- Giữ lại ảnh gốc (chưa augment) để phục vụ **Grad-CAM / heatmap** trong ứng dụng demo.
-- Ghi log chi tiết ở mỗi bước làm sạch (số ảnh loại bỏ, lý do) để đưa vào báo cáo khóa luận.
+`eda.json`/`eda_report.txt` ghi thống kê theo source, nhãn, trạng thái, split, lý do loại và dataset fingerprint. Dùng các file này để báo số liệu thực nghiệm; không sao chép số lượng từ một lần chạy cũ.
 
----
-
-## 6. Thứ tự chạy pipeline
+## 6. Lệnh chạy
 
 ```bash
-python src/preprocessing/merge_datasets.py
-python src/preprocessing/clean_data.py
-python src/preprocessing/eda.py
-python src/preprocessing/lighting_enhance.py
-python src/preprocessing/split_dataset.py
-python src/preprocessing/balance_classes.py
-# augmentation.py và dataloader.py được import trực tiếp trong lúc huấn luyện
+python -m src.preprocessing.run_pipeline \
+  --config configs/preprocessing_config.yaml \
+  --raw-root data/raw \
+  --metadata-root data/metadata/v1 \
+  --processed-root data/processed/v1 \
+  --report-root outputs/data/v1
 ```
+
+Xác nhận lại độc lập:
+
+```bash
+python -m src.data.validation \
+  --dataset-root data/processed/v1 \
+  --manifest data/metadata/v1/split_manifest.csv \
+  --phash-threshold 4
+```
+
+Lệnh thành công trả JSON chứa `dataset_fingerprint` và `zero_leakage: true`. Nếu muốn chạy lại, dùng version/output mới; không xóa một version đang được checkpoint tham chiếu mà chưa lưu manifest và cấu hình tương ứng.
+
+## 7. Điều kiện trước khi huấn luyện
+
+- `validation.is_valid == true`;
+- đủ 10 lớp trong train/val/test;
+- `split_manifest.csv`, mapping và config được giữ cùng experiment;
+- class weights chỉ được tính từ train;
+- không đọc test để chọn hyperparameter hoặc checkpoint.
+
+Notebook `notebooks/train_mobilenetv3_kaggle.ipynb` tự động thực hiện các bước này và đóng gói manifest/config cùng `best.pt` để lần chạy có thể kiểm toán.

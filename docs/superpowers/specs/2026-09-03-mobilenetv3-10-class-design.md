@@ -1,7 +1,7 @@
 # Thiết kế hệ thống phân loại rác MobileNetV3 10 lớp
 
 Ngày: 2026-09-03
-Trạng thái: Thiết kế đã được duyệt trong trao đổi; chờ duyệt đặc tả thành văn trước khi triển khai.
+Trạng thái: Đã triển khai trên nhánh `feat/mobilenetv3-10-class`.
 
 ## 1. Mục tiêu
 

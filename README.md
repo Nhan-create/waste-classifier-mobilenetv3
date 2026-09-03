@@ -1,98 +1,271 @@
-# Waste Classifier - MobileNetV3 (Tiền xử lý dữ liệu)
+# Waste Classifier MobileNetV3 — phân loại rác 10 lớp
 
-Dự án này là phân hệ tiền xử lý dữ liệu cho đồ án khóa luận tốt nghiệp về phân loại rác thải tại Việt Nam sử dụng mô hình mạng **MobileNetV3**.
+Hệ thống PyTorch hoàn chỉnh để hợp nhất hai nguồn ảnh rác, kiểm tra và chia dữ liệu không rò rỉ, huấn luyện MobileNetV3-Large, đánh giá đa lớp, dự đoán bằng CLI và chạy ứng dụng PyQt5 với ảnh tĩnh hoặc webcam.
 
-Hệ thống được thiết kế để gộp, làm sạch và chuẩn bị dữ liệu từ 2 nguồn:
-1. **VN Trash** (Bộ dữ liệu rác thải Việt Nam).
-2. **Garbage Classification v2** (Bộ dữ liệu rác thải quốc tế).
+> Trạng thái quan trọng: repository không chứa dữ liệu hoặc checkpoint đã huấn luyện. Mã nguồn, notebook và kiểm thử đã sẵn sàng; `best.pt` chỉ xuất hiện sau khi chạy huấn luyện với hai dataset, nên README không công bố một độ chính xác chưa được đo.
 
+## Tổng quan và kiến trúc
 
----
+Đây là bài toán **phân loại ảnh đơn nhãn, 10 lớp**: mỗi ảnh được biến đổi thành tensor RGB, MobileNetV3-Large tạo 10 logits, rồi Softmax đổi logits thành xác suất. Class ID có xác suất lớn nhất là top-1; giao diện đồng thời hiển thị top-3 và cảnh báo khi top-1 thấp hơn ngưỡng mặc định `0.55`.
 
-## Những công việc đã thực hiện 
-
-Chúng tôi đã hoàn thiện và sửa đổi toàn bộ pipeline tiền xử lý dữ liệu để đạt hiệu năng tối đa và đảm bảo tính chính xác cho việc huấn luyện mô hình:
-
-### 1. Gộp và Chuẩn hóa cấu trúc dữ liệu (`merge_datasets.py`)
-* Thiết kế mã nguồn gộp tự động dữ liệu từ thư mục tải về `Data/` sang cấu trúc chuẩn hóa `data/raw/`.
-* Tự động xử lý cấu trúc phân cấp phức tạp (như phân chia sẵn `Train`/`Test` của VN Trash hoặc cấu trúc phẳng của Garbage Dataset) mà không gây nhầm lẫn nhãn.
-
-### 2. Làm sạch & Loại bỏ trùng lặp (`clean_data.py`)
-* Quét và kiểm tra tính toàn vẹn của tệp ảnh để lọc ảnh lỗi (corrupt).
-* Sử dụng thuật toán băm **MD5** kết hợp băm cảm nhận **pHash (Perceptual Hash)** để phát hiện ảnh trùng lặp hoặc gần trùng lặp.
-* **Loại bỏ trùng lặp triệt để** (giữ lại 1 bản ghi duy nhất) nhằm ngăn chặn hiện tượng rò rỉ dữ liệu (data leakage) giữa tập huấn luyện (Train) và tập kiểm thử (Test).
-* Thêm bộ lọc định dạng tệp ảnh chỉ cho phép định dạng ảnh hợp lệ (`.jpg`, `.jpeg`, `.png`, `.webp`, `.bmp`), bỏ qua các file rác của hệ thống (như `.DS_Store`).
-
-### 3. Áp dụng bảng ánh xạ nhãn (`split_dataset.py`)
-* Đọc cấu hình từ bảng ánh xạ [`label_mapping.csv`](data/metadata/label_mapping.csv).
-* Chuyển đổi các nhãn riêng lẻ của từng bộ dữ liệu thành tập nhãn chung thống nhất (ví dụ: `Alu` -> `metal`, `Carton` -> `cardboard`, `PET` -> `plastic`, `Foam_box` -> `plastic`).
-
-### 4. Chia tập dữ liệu tối ưu hóa cho Test set thực tế (`split_dataset.py`)
-* Phân chia tập dữ liệu thành 3 phần **Train/Val/Test** theo cơ chế **Source-Aware Stratified Split** (chia độc lập theo từng nguồn):
-  * **Bộ ảnh tự chụp (`self_collected`)**: Ưu tiên phân chia **20% Train / 10% Val / 70% Test** để dùng tập ảnh thực tế TP.HCM làm tập đánh giá chủ đạo.
-  * **Các bộ dữ liệu công cộng khác**: Áp dụng tỷ lệ chuẩn **70% Train / 15% Val / 15% Test** để tối ưu hóa lượng dữ liệu huấn luyện.
-* Khắc phục hoàn toàn lỗi crash khi chia dữ liệu nếu lớp có quá ít ảnh.
-* Ngăn chặn ghi đè tệp tin trùng tên từ các nguồn khác nhau bằng cách tự động đánh số/tiền tố hóa tên tệp (`<source>_<filename>`).
-
-### 5. Cân bằng lớp & Trọng số hàm Loss (`balance_classes.py`)
-* Sửa lỗi nghiêm trọng về hiệu năng quét ổ đĩa liên tục ($O(N^2)$) khi sao chép oversampling.
-* Tính toán tự động trọng số lớp nghịch đảo tần suất lớp để làm tham số cân bằng cho hàm loss (`nn.CrossEntropyLoss`) lưu tại `data/processed/class_weights.json`.
-
-### 6. Cải tiến nhóm tăng cường dữ liệu (`augmentation.py` & `dataloader.py`)
-* Loại bỏ các bước `Resize` lặp lại dư thừa trước `RandomResizedCrop` để tránh hiện tượng làm mờ ảnh và răng cưa ảnh.
-* Tích hợp cấu hình 5 nhóm tăng cường dữ liệu thực nghiệm (A - Baseline đến E - Extreme) trực tiếp vào `get_transforms` của PyTorch `DataLoader` để tiện chạy các thực nghiệm so sánh.
-
----
-
-## Kết quả chạy thực tế trên bộ dữ liệu
-
-* **Tổng số ảnh quét ban đầu**: `15,754` ảnh.
-* **Ảnh trùng lặp phát hiện & loại bỏ**: `923` ảnh.
-* **Tổng ảnh hợp lệ đưa vào huấn luyện**: `14,831` ảnh.
-* **Tỷ lệ phân chia tập dữ liệu**:
-  * **Train**: `10,381` ảnh
-  * **Validation**: `2,225` ảnh
-  * **Test**: `2,225` ảnh
-* **Phân bố các lớp sau khi ánh xạ**:
-  * `cardboard`: 1,448 ảnh
-  * `plastic`: 1,390 ảnh
-  * `clothes`: 1,324 ảnh
-  * `metal`: 1,581 ảnh
-  * `glass`: 1,215 ảnh
-  * `paper`: 1,039 ảnh
-  * `shoes`: 1,014 ảnh
-  * `battery`: 529 ảnh
-  * `biological`: 489 ảnh
-  * `trash`: 352 ảnh
-
----
-
-##  Cấu trúc thư mục mã nguồn tiền xử lý
-
-```
-src/preprocessing/
-├── __init__.py
-├── merge_datasets.py       # Gom và chuẩn hóa thư mục raw
-├── clean_data.py           # Làm sạch và gán mã hash trùng lặp
-├── eda.py                  # Tạo thống kê báo cáo dữ liệu
-├── lighting_enhance.py     # CLAHE, gamma, white balance
-├── augmentation.py         # Định nghĩa 5 nhóm augmentation (A-E)
-├── split_dataset.py        # Chia dữ liệu & áp label mapping
-├── balance_classes.py      # Trọng số loss class weights
-└── dataloader.py           # Dataset & PyTorch DataLoader
+```text
+Hai dataset Kaggle
+        │
+        ▼
+manifest nguồn + ánh xạ nhãn
+        │
+        ▼
+kiểm tra ảnh ─ SHA-256 ─ pHash ─ cách ly xung đột
+        │
+        ▼
+group-stratified split 70/15/15 ─ validator chống leakage
+        │
+        ▼
+MobileNetV3-Large (ImageNet) ─ weighted CE ─ AdamW ─ 2 phase
+        │
+        ├── best.pt + last.pt
+        ├── metrics JSON/CSV + confusion matrix
+        └── CLI / PyQt5 ảnh tĩnh / webcam trong bộ nhớ
 ```
 
-## Hướng dẫn chạy nhanh
+MobileNetV3-Large dùng các khối inverted residual, depthwise convolution, pointwise convolution, Squeeze-and-Excitation và hàm kích hoạt h-swish để giảm chi phí tính toán. Classification layer cuối được thay bằng `Linear(..., 10)`. Huấn luyện transfer learning gồm:
 
-1. Kích hoạt môi trường ảo `.venv`:
-   ```bash
-   .venv\Scripts\activate
-   ```
-2. Chạy toàn bộ pipeline:
-   ```bash
-   python src/preprocessing/merge_datasets.py
-   python src/preprocessing/clean_data.py
-   python src/preprocessing/eda.py
-   python src/preprocessing/split_dataset.py
-   python src/preprocessing/balance_classes.py
-   ```
+1. đóng băng feature extractor, học classifier 5 epoch với LR `1e-3`;
+2. mở toàn bộ backbone, fine-tune tối đa 25 epoch với LR backbone `1e-4` và LR head `3e-4`;
+3. dùng weighted cross-entropy, label smoothing `0.1`, AdamW, cosine schedule, gradient clipping và AMP khi có CUDA;
+4. chọn `best.pt` theo **validation macro-F1**, không dùng test để chọn model.
+
+Định nghĩa model chỉ có một nguồn tại `src/models/mobilenetv3.py`. Train, evaluate, CLI và GUI đều đọc chung checkpoint tự mô tả để không lệch thứ tự lớp.
+
+## Mười lớp chuẩn
+
+Thứ tự dưới đây được khóa trong manifest và checkpoint:
+
+| Chỉ số | Class ID | Tên hiển thị |
+|---:|---|---|
+| 0 | `battery` | Pin |
+| 1 | `biological` | Rác hữu cơ |
+| 2 | `cardboard` | Bìa carton |
+| 3 | `clothes` | Quần áo |
+| 4 | `glass` | Thủy tinh |
+| 5 | `metal` | Kim loại |
+| 6 | `paper` | Giấy |
+| 7 | `plastic` | Nhựa |
+| 8 | `shoes` | Giày dép |
+| 9 | `trash` | Rác khác |
+
+Tên tiếng Việt chỉ là lớp trình bày. Logic, thư mục dữ liệu và checkpoint luôn dùng class ID tiếng Anh ổn định.
+
+## Nguồn dữ liệu, phiên bản và giấy phép
+
+| Nguồn | Phiên bản khóa | Giấy phép do trang nguồn công bố |
+|---|---|---|
+| [VN Trash Classification](https://www.kaggle.com/datasets/mrgetshjtdone/vn-trash-classification/versions/1) | `mrgetshjtdone/vn-trash-classification/versions/1` | MIT |
+| [Garbage Classification v2](https://www.kaggle.com/datasets/sumn2u/garbage-classification-v2/versions/12) | `sumn2u/garbage-classification-v2/versions/12` | MIT |
+
+Người sử dụng cần đọc data card, điều khoản Kaggle và thông tin trích dẫn tại từng trang nguồn trước khi phân phối lại dữ liệu hoặc sản phẩm dẫn xuất. Phiên bản được ghi rõ trong cấu hình và notebook để một bản cập nhật upstream không âm thầm làm thay đổi thí nghiệm.
+
+### Chính sách ánh xạ nhãn
+
+`data/metadata/label_mapping.csv` là nguồn sự thật được review và commit. Garbage Classification v2 đã có đúng 10 class ID nên giữ nguyên sau khi chuẩn hóa tên. Chín nhãn của VN Trash được ánh xạ như sau:
+
+| Nhãn VN Trash | Class ID chuẩn |
+|---|---|
+| `Alu` | `metal` |
+| `Carton` | `cardboard` |
+| `Foam_box` | `plastic` |
+| `Milk_box` | `cardboard` |
+| `Other` | `trash` |
+| `PET` | `plastic` |
+| `Paper` | `paper` |
+| `Paper_cup` | `paper` |
+| `Plastic_cup` | `plastic` |
+
+Nhãn không có trong bảng không được đoán tự động: pipeline dừng hoặc đánh dấu `unmapped` để người dùng kiểm tra.
+
+## Cài đặt môi trường
+
+Khuyến nghị Python 3.11. Python 3.10–3.12 cũng phù hợp nếu các wheel trong `requirements.txt` có sẵn cho hệ điều hành.
+
+Windows PowerShell:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+Linux/macOS:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+`numpy==1.26.4` và `scipy==1.13.1` được khóa để tương thích ABI với `torch==2.3.1`. Máy CUDA cần driver tương thích; notebook Kaggle là đường chạy khuyến nghị cho huấn luyện đầy đủ.
+
+## Tải dữ liệu cục bộ
+
+Đăng nhập KaggleHub bên ngoài repository; không dán thông tin xác thực vào mã hoặc notebook:
+
+```powershell
+python -c "import kagglehub; kagglehub.login()"
+python scripts/download_datasets.py `
+  --output-root data/sources `
+  --config-output data/sources/preprocessing_config.local.yaml
+```
+
+KaggleHub tải đúng hai handle đã khóa. Helper tự tìm thư mục thực sự chứa `Train/Test` hoặc `original`, in các root đã phân giải và ghi `data/sources/preprocessing_config.local.yaml`. Layout sau khi phân giải là:
+
+```text
+data/sources/vn_trash/     # có Train/ và Test/
+data/sources/garbage_v2/   # có original/ hoặc các thư mục lớp
+```
+
+Nếu archive có thêm một thư mục bọc ngoài, helper xử lý mà không di chuyển hay nhân đôi ảnh. Dữ liệu, config local và credential đều nằm dưới đường dẫn bị `.gitignore` loại khỏi Git.
+
+## Chạy trên Kaggle GPU
+
+1. Tạo Kaggle Notebook và bật GPU.
+2. Attach đúng hai dataset/version trong bảng nguồn ở trên.
+3. Mở `notebooks/train_mobilenetv3_kaggle.ipynb` và chạy tuần tự toàn bộ cell.
+4. Tải `/kaggle/working/waste-classifier-output.zip` sau khi hoàn tất.
+
+Notebook tự tìm layout input, ghi cấu hình đường dẫn đã phân giải, chạy pipeline, xác nhận `validation.is_valid`, huấn luyện hai phase, đánh giá `best.pt` trên test đúng một lần, rồi đóng gói checkpoint, manifest, cấu hình, metric và biểu đồ. Notebook không chứa credential.
+
+## Pipeline dữ liệu
+
+Khi dùng downloader ở trên, truyền config local mà nó tạo:
+
+```powershell
+python -m src.preprocessing.run_pipeline `
+  --config data/sources/preprocessing_config.local.yaml `
+  --raw-root data/raw `
+  --metadata-root data/metadata/v1 `
+  --processed-root data/processed/v1 `
+  --report-root outputs/data/v1
+```
+
+Trên bash, thay dấu tiếp dòng PowerShell bằng `\`. Pipeline tạo một version mới và cố ý từ chối ghi đè version đã tồn tại. Kiểm tra độc lập:
+
+```bash
+python -m src.data.validation \
+  --dataset-root data/processed/v1 \
+  --manifest data/metadata/v1/split_manifest.csv
+```
+
+Các kiểm tra gồm: file corrupt, nhãn không ánh xạ, exact duplicate bằng SHA-256, near-duplicate bằng pHash, cluster xung đột nhãn, đủ 10 lớp và duplicate cluster không đi qua ranh giới train/val/test. Chi tiết thuật toán nằm trong `Tienxulidulieu.md`.
+
+## Huấn luyện và resume
+
+```bash
+python -m src.training.train \
+  --data-root data/processed/v1 \
+  --manifest data/metadata/v1/split_manifest.csv \
+  --config configs/model_config.yaml \
+  --preprocessing-config data/sources/preprocessing_config.local.yaml \
+  --output-dir artifacts/run-001 \
+  --device cuda
+```
+
+Nếu thiếu VRAM, thêm `--batch-size 16`. Tiếp tục một lần chạy bị ngắt bằng checkpoint `last.pt`:
+
+```bash
+python -m src.training.train \
+  --data-root data/processed/v1 \
+  --manifest data/metadata/v1/split_manifest.csv \
+  --config configs/model_config.yaml \
+  --preprocessing-config data/sources/preprocessing_config.local.yaml \
+  --output-dir artifacts/run-001 \
+  --resume artifacts/run-001/last.pt \
+  --device cuda
+```
+
+`best.pt` là checkpoint triển khai tốt nhất theo validation macro-F1; `last.pt` chứa thêm optimizer, scheduler và scaler để resume. Mỗi checkpoint lưu model ID, 10 class names theo thứ tự, input size, normalization, epoch, metrics, training config và fingerprint SHA-256 của dataset.
+
+## Đánh giá
+
+Chỉ đánh giá sau khi model đã được chọn bằng validation:
+
+```bash
+python -m src.evaluation.evaluate \
+  --checkpoint artifacts/run-001/best.pt \
+  --test-root data/processed/v1/test \
+  --output-dir outputs/evaluation/run-001 \
+  --device cuda
+```
+
+Output gồm accuracy, macro-F1, weighted-F1, precision/recall/F1/support từng lớp, one-vs-rest macro AUC khi đủ điều kiện, confusion matrix raw và normalized.
+
+## Dự đoán bằng CLI
+
+```bash
+python -m src.inference.predict \
+  --checkpoint artifacts/run-001/best.pt \
+  --image path/to/image.jpg \
+  --top-k 3 \
+  --confidence-threshold 0.55 \
+  --device auto
+```
+
+Kết quả là một JSON object chứa `top1`, `topk` và `low_confidence`. Transform và class order được lấy từ metadata checkpoint, không hard-code riêng ở CLI.
+
+## Ứng dụng PyQt5: ảnh và webcam
+
+```bash
+python app.py \
+  --checkpoint artifacts/run-001/best.pt \
+  --device auto \
+  --history-db outputs/history.sqlite3
+```
+
+- “Chọn ảnh” chạy inference ở worker thread và lưu một bản ghi SQLite.
+- “Bật camera” đọc BGR, chuyển RGB và dự đoán tuần tự hoàn toàn trong bộ nhớ; không ghi JPEG tạm và không thêm lịch sử mỗi frame.
+- Camera lỗi không vô hiệu hóa phân loại ảnh tĩnh.
+- Đóng cửa sổ yêu cầu camera dừng và giải phóng thiết bị.
+
+Ứng dụng chỉ phân loại hình ảnh, không đưa ra chỉ dẫn xử lý rác mang tính pháp lý hoặc phụ thuộc địa phương.
+
+## Bố cục artifact
+
+```text
+data/metadata/label_mapping.csv       # được commit
+data/metadata/v1/                     # manifest, duplicate/conflict reports, weights
+data/processed/v1/{train,val,test}/   # 10 thư mục lớp mỗi split
+artifacts/run-001/
+  best.pt
+  last.pt
+  history.csv
+  resolved_config.yaml
+outputs/evaluation/run-001/
+  metrics.json
+  per_class_metrics.csv
+  confusion_matrix_raw.png
+  confusion_matrix_normalized.png
+outputs/history.sqlite3
+```
+
+Trừ bảng mapping, toàn bộ dữ liệu, checkpoint, SQLite và output sinh ra đều bị ignore.
+
+## Kiểm thử và CI
+
+```powershell
+ruff check src tests app.py scripts
+python -m compileall src app.py scripts
+$env:QT_QPA_PLATFORM='offscreen'
+$env:MPLBACKEND='Agg'
+pytest -q
+```
+
+GitHub Actions chạy cùng quality gate trên Python 3.11, CPU, Qt headless; CI không tải dataset, mở camera hoặc chạy huấn luyện đầy đủ. Test dùng dữ liệu tổng hợp nhỏ để kiểm tra mapping, dedup, group split, checkpoint, train smoke, evaluation, inference, SQLite, worker Qt, GUI và notebook contract.
+
+## Giới hạn
+
+- Đây là closed-set classifier: ảnh ngoài 10 lớp vẫn bị xếp vào một lớp; `low_confidence` chỉ là cảnh báo, không phải bộ phát hiện out-of-distribution.
+- Một ảnh chứa nhiều loại rác vẫn chỉ nhận một class ID.
+- Chất lượng thực tế phụ thuộc dữ liệu, góc chụp, ánh sáng và domain shift; phải báo metric từ lần chạy Kaggle thực tế, không suy diễn từ dataset khác.
+- pHash là heuristic cho ảnh gần trùng; cluster xung đột được cách ly để review thay vì tự sửa nhãn.
+- Webcam và tốc độ inference phụ thuộc CPU/GPU, driver và camera của máy chạy.
